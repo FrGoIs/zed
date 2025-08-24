@@ -521,44 +521,44 @@ impl GitPanel {
             .detach();
 
             let mut this = Self {
+                _settings_subscription,
                 active_repository,
+                add_coauthors: true,
+                amend_pending: false,
+                bulk_staging: None,
                 commit_editor,
                 conflicted_count: 0,
                 conflicted_staged_count: 0,
-                add_coauthors: true,
-                generate_commit_message_task: None,
+                context_menu: None,
                 entries: Vec::new(),
+                entry_count: 0,
                 focus_handle: cx.focus_handle(),
                 fs,
+                generate_commit_message_task: None,
+                horizontal_scrollbar,
+                local_committer: None,
+                local_committer_task: None,
+                marked_entries: Vec::new(),
+                max_width_item_index: None,
+                modal_open: false,
                 new_count: 0,
                 new_staged_count: 0,
                 pending: Vec::new(),
                 pending_commit: None,
-                amend_pending: false,
-                signoff_enabled: false,
                 pending_serialization: Task::ready(()),
-                single_staged_entry: None,
-                single_tracked_entry: None,
                 project,
                 scroll_handle,
-                max_width_item_index: None,
                 selected_entry: None,
-                marked_entries: Vec::new(),
+                show_placeholders: false,
+                signoff_enabled: false,
+                single_staged_entry: None,
+                single_tracked_entry: None,
                 tracked_count: 0,
                 tracked_staged_count: 0,
                 update_visible_entries_task: Task::ready(()),
-                width: None,
-                show_placeholders: false,
-                local_committer: None,
-                local_committer_task: None,
-                context_menu: None,
-                workspace: workspace.weak_handle(),
-                modal_open: false,
-                entry_count: 0,
-                horizontal_scrollbar,
                 vertical_scrollbar,
-                bulk_staging: None,
-                _settings_subscription,
+                width: None,
+                workspace: workspace.weak_handle(),
             };
 
             this.schedule_update(false, window, cx);
@@ -3306,14 +3306,24 @@ impl GitPanel {
         let text;
         let action;
         let tooltip;
-        if self.total_staged_count() == self.entry_count && self.entry_count > 0 {
+        let staged_count = self.total_staged_count();
+        let staged_state;
+
+        if staged_count == self.entry_count && self.entry_count > 0 {
             text = "Unstage All";
             action = git::UnstageAll.boxed_clone();
             tooltip = "git reset";
+            staged_state = ToggleState::Selected;
         } else {
             text = "Stage All";
             action = git::StageAll.boxed_clone();
-            tooltip = "git add --all ."
+            tooltip = "git add --all .";
+
+            if staged_count > 0 {
+                staged_state = ToggleState::Indeterminate
+            } else {
+                staged_state = ToggleState::Unselected;
+            }
         }
 
         let change_string = match self.entry_count {
@@ -3322,41 +3332,45 @@ impl GitPanel {
             _ => format!("{} Changes", self.entry_count),
         };
 
+        let stage_all_checkbox = Checkbox::new("stage-all-changes", staged_state)
+            .disabled(!self.has_write_access(cx))
+            .fill()
+            .elevation(ElevationIndex::Surface)
+            .tooltip(Tooltip::for_action_title_in(
+                tooltip,
+                action.as_ref(),
+                &self.focus_handle,
+            ))
+            .disabled(self.entry_count == 0)
+            .on_click(move |_, _, cx| {
+                let action = action.boxed_clone();
+                cx.defer(move |cx| {
+                    cx.dispatch_action(action.as_ref());
+                });
+            });
+
         Some(
             self.panel_header_container(window, cx)
                 .px_2()
                 .justify_between()
-                .child(
-                    panel_button(change_string)
-                        .color(Color::Muted)
-                        .tooltip(Tooltip::for_action_title_in(
-                            "Open Diff",
-                            &Diff,
-                            &self.focus_handle,
-                        ))
-                        .on_click(|_, _, cx| {
-                            cx.defer(|cx| {
-                                cx.dispatch_action(&Diff);
-                            })
-                        }),
-                )
+                .gap_1()
                 .child(
                     h_flex()
                         .gap_1()
-                        .child(self.render_overflow_menu("overflow_menu"))
+                        .child(div().child(stage_all_checkbox).cursor_pointer())
+                        .child(Label::new(change_string))
                         .child(
-                            panel_filled_button(text)
+                            panel_button("TODO: Retrieve line change count")
+                                .color(Color::Muted)
                                 .tooltip(Tooltip::for_action_title_in(
-                                    tooltip,
-                                    action.as_ref(),
+                                    "Open Diff",
+                                    &Diff,
                                     &self.focus_handle,
                                 ))
-                                .disabled(self.entry_count == 0)
-                                .on_click(move |_, _, cx| {
-                                    let action = action.boxed_clone();
-                                    cx.defer(move |cx| {
-                                        cx.dispatch_action(action.as_ref());
-                                    })
+                                .on_click(|_, _, cx| {
+                                    cx.defer(|cx| {
+                                        cx.dispatch_action(&Diff);
+                                    });
                                 }),
                         ),
                 ),
